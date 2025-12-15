@@ -1,87 +1,100 @@
 import numpy as np
 import pytest
-from rice_ml.supervised_learning.knn import KNNClassifier
+
+from rice_ml.supervised_learning.knn import KNNClassifier, KNNRegressor
 
 
-def make_toy():
-    # 两团可分数据
-    X0 = np.array([[0, 0], [0, 1], [1, 0]], dtype=float)
-    X1 = np.array([[5, 5], [5, 6], [6, 5]], dtype=float)
-    X = np.vstack([X0, X1])
-    y = np.array([0, 0, 0, 1, 1, 1])
-    return X, y
+# ------------------------ Classifier ------------------------
+
+def test_classifier_basic_predict_and_proba_uniform_euclidean():
+    X = np.array([[0,0],[0,1],[1,0],[1,1]], dtype=float)
+    y = np.array([0,0,1,1])
+    clf = KNNClassifier(n_neighbors=3, metric="euclidean", weights="uniform").fit(X, y)
+
+    preds = clf.predict([[0.1, 0.1], [0.9, 0.9]])
+    assert preds.tolist() == [0, 1]
+
+    proba = clf.predict_proba([[0.1, 0.1], [0.9, 0.9]])
+    # rows sum to 1
+    assert np.allclose(proba.sum(axis=1), 1.0)
+    # class order is sorted(unique) = [0,1]
+    assert (proba.argmax(axis=1) == preds).all()
 
 
-# ---- 基础正确性 ----
-def test_knn_k1():
-    X, y = make_toy()
-    model = KNNClassifier(n_neighbors=1)
-    model.fit(X, y)
-    pred = model.predict(np.array([[0.2, 0.1], [5.2, 5.1]]))
-    assert (pred == np.array([0, 1])).all()
+def test_classifier_manhattan_distance_weighted():
+    X = np.array([[0,0],[2,0],[0,2],[2,2]], dtype=float)
+    y = np.array(["A","A","B","B"], dtype=object)
+    # Query near (0,0) should favor A
+    clf = KNNClassifier(n_neighbors=3, metric="manhattan", weights="distance").fit(X, y)
+    pred = clf.predict([[0.1, 0.2]])
+    assert pred.tolist() == ["A"]
+    # predict_proba should be concentrated on A
+    p = clf.predict_proba([[0.1, 0.2]])[0]
+    assert p[0] > p[1]  # classes_ sorted -> ["A","B"]
 
 
-def test_knn_k3_distance_weighted():
-    X, y = make_toy()
-    model = KNNClassifier(n_neighbors=3, weights="distance")
-    model.fit(X, y)
-    pred = model.predict(np.array([[0.3, 0.1], [5.4, 5.4]]))
-    assert (pred == np.array([0, 1])).all()
-
-
-# ---- 边界与鲁棒性 ----
-def test_invalid_params():
+def test_classifier_errors_and_kneighbors():
+    X = np.array([[0,0],[1,1],[2,2]], dtype=float)
+    y = np.array([0,1,1])
+    clf = KNNClassifier(n_neighbors=2).fit(X, y)
+    # wrong feature count
     with pytest.raises(ValueError):
-        KNNClassifier(n_neighbors=0)
+        clf.predict([[0.0, 0.0, 0.0]])
+    # kneighbors returns shapes (nq, k)
+    d, idx = clf.kneighbors([[1.0, 1.0]])
+    assert d.shape == (1, 2) and idx.shape == (1, 2)
+
+
+def test_classifier_score_accuracy():
+    X = np.array([[0,0],[0,1],[1,0],[1,1]], dtype=float)
+    y = np.array([0,0,1,1])
+    clf = KNNClassifier(n_neighbors=1).fit(X, y)
+    assert clf.score(X, y) == 1.0
+
+
+def test_classifier_zero_distance_with_distance_weights():
+    # exact duplicate point in training -> zero distance handling
+    X = np.array([[0,0],[1,1],[0,0]], dtype=float)
+    y = np.array([0,1,0])
+    clf = KNNClassifier(n_neighbors=2, weights="distance").fit(X, y)
+    # query exactly matches (0,0); only zero-distance neighbors count -> both class 0
+    pred = clf.predict([[0,0]])
+    assert pred.tolist() == [0]
+    p = clf.predict_proba([[0,0]])[0]
+    # full mass on class 0
+    assert np.isclose(p[0], 1.0)
+
+
+# ------------------------ Regressor ------------------------
+
+def test_regressor_basic_predict_and_score():
+    X = np.array([[0],[1],[2],[3]], dtype=float)
+    y = np.array([0.0, 1.0, 1.5, 3.0])
+    reg = KNNRegressor(n_neighbors=2, weights="distance").fit(X, y)
+    pred = reg.predict([[1.5]])[0]
+    assert 1.2 < pred < 1.3
+    # perfect fit at training points with k=1
+    reg2 = KNNRegressor(n_neighbors=1).fit(X, y)
+    assert reg2.score(X, y) == 1.0
+
+
+def test_regressor_input_errors():
+    X = np.array([[0],[1],[2]], dtype=float)
+    y = np.array([0.0, 1.0, 2.0])
+    # n_neighbors > n_samples
     with pytest.raises(ValueError):
-        KNNClassifier(n_neighbors=3, metric="chebyshev")
+        KNNRegressor(n_neighbors=5).fit(X, y)
+    # non-numeric y
+    with pytest.raises(TypeError):
+        KNNRegressor(n_neighbors=1).fit(X, np.array(["a","b","c"], dtype=object))
+
+
+def test_regressor_constant_y_score_error():
+    X = np.array([[0],[1],[2]], dtype=float)
+    y = np.array([5.0, 5.0, 5.0])
+    reg = KNNRegressor(n_neighbors=1).fit(X, y)
+    # not perfect predictions off-training -> R^2 undefined; but here using training X, k=1 => perfect
+    assert reg.score(X, y) == 1.0
+    # perturb X slightly to avoid exact matches -> should raise
     with pytest.raises(ValueError):
-        KNNClassifier(n_neighbors=3, weights="weird")
-
-
-def test_shape_and_length_mismatch():
-    model = KNNClassifier()
-    X_bad = np.array([1.0, 2.0, 3.0])  # 1D
-    y = np.array([0, 1, 1])
-    with pytest.raises(ValueError):
-        model.fit(X_bad, y)
-
-    X2 = np.array([[0.0, 0.0], [1.0, 1.0]])
-    y2 = np.array([0])
-    with pytest.raises(ValueError):
-        model.fit(X2, y2)
-
-
-def test_predict_before_fit():
-    model = KNNClassifier()
-    with pytest.raises(RuntimeError):
-        model.predict(np.array([[0.0, 0.0]]))
-
-
-def test_k_greater_than_n_train():
-    X = np.array([[0.0, 0.0], [1.0, 1.0]])
-    y = np.array([0, 1])
-    model = KNNClassifier(n_neighbors=5)  # k > n_train
-    model.fit(X, y)
-    pred = model.predict(np.array([[0.1, 0.0]]))
-    assert pred.shape == (1,)
-
-
-def test_tie_break_uniform():
-    X = np.array([[-1.0, 0.0], [1.0, 0.0]])
-    y = np.array([0, 1])
-    model = KNNClassifier(n_neighbors=2, weights="uniform")
-    model.fit(X, y)
-    pred = model.predict(np.array([[0.0, 0.0]]))
-    # 两边各一个，平局时应选较小标签 0
-    assert int(pred[0]) == 0
-
-
-def test_distance_weights_zero_distance_duplicate():
-    # 测试点与训练样本完全重合；distance 权重应强烈偏向该点标签
-    X = np.array([[0.0, 0.0], [0.0, 1.0], [1.0, 0.0]])
-    y = np.array([1, 0, 0])  # 与 [0,0] 重合的点标签=1
-    model = KNNClassifier(n_neighbors=3, weights="distance")
-    model.fit(X, y)
-    pred = model.predict(np.array([[0.0, 0.0]]))
-    assert int(pred[0]) == 1
+        reg.score(X + 0.1, y)

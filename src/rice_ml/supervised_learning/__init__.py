@@ -1,1 +1,2 @@
-# Mark this as a subpackage
+from .distance_metrics import *
+from .knn import *

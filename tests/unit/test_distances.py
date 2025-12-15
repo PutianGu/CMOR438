@@ -1,31 +1,35 @@
-import numpy as np
 import pytest
-from rice_ml.supervised_learning.functions import (
-    euclidean,
-    manhattan,
-    pairwise_distance,
-)
+import numpy as np
+from rice_ml import euclidean_distance, manhattan_distance
 
 
-def test_point_distances():
-    a = np.array([0.0, 0.0])
-    b = np.array([3.0, 4.0])
-    assert euclidean(a, b) == 5.0
-    assert manhattan(a, b) == 7.0
+def test_euclidean_distance_basic():
+    assert euclidean_distance(np.array([0, 0]), np.array([3, 4])) == 5.0
+    assert euclidean_distance([1, 2, 3], [1, 2, 3]) == 0.0
 
 
-def test_pairwise():
-    X1 = np.array([[0.0, 0.0], [1.0, 0.0]])
-    X2 = np.array([[3.0, 4.0], [1.0, 1.0]])
-    D_e = pairwise_distance(X1, X2, "euclidean")
-    D_m = pairwise_distance(X1, X2, "manhattan")
-
-    assert D_e.shape == (2, 2) and D_m.shape == (2, 2)
-    assert np.isclose(D_e[0, 0], 5.0)
-    assert D_m[0, 1] == 2.0
+def test_manhattan_distance_basic():
+    assert manhattan_distance(np.array([1, 2, 3]), np.array([4, 0, 3])) == 5.0
+    assert manhattan_distance([0, 0], [0, 0]) == 0.0
 
 
-def test_invalid_metric():
-    X = np.array([[0.0, 0.0]])
+def test_invalid_shape():
     with pytest.raises(ValueError):
-        pairwise_distance(X, X, metric="chebyshev")
+        euclidean_distance(np.array([[1, 2], [3, 4]]), np.array([1, 2]))
+    with pytest.raises(ValueError):
+        manhattan_distance(np.array([1, 2, 3]), np.array([1, 2]))
+
+
+def test_type_validation():
+    with pytest.raises(TypeError):
+        euclidean_distance(["a", "b"], [1, 2])
+    with pytest.raises(TypeError):
+        manhattan_distance([1, 2], ["x", "y"])
+
+
+def test_symmetry_and_nonnegative():
+    a, b = np.array([1, 2, 3]), np.array([4, 5, 6])
+    assert euclidean_distance(a, b) == euclidean_distance(b, a)
+    assert manhattan_distance(a, b) == manhattan_distance(b, a)
+    assert euclidean_distance(a, b) >= 0
+    assert manhattan_distance(a, b) >= 0
