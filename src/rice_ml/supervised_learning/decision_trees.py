@@ -9,7 +9,7 @@ and understand the core ideas.
 Example
 -------
 >>> import numpy as np
->>> from rice_ml.supervised_learning.decision_tree import DecisionTreeClassifier
+>>> from rice_ml.supervised_learning.decision_trees import DecisionTreeClassifier
 >>>
 >>> X = np.array([[0, 0],
 ...               [0, 1],
@@ -18,7 +18,7 @@ Example
 >>> y = np.array([0, 0, 1, 1])
 >>>
 >>> tree = DecisionTreeClassifier(max_depth=2, random_state=42)
->>> tree.fit(X, y)
+>>> _ = tree.fit(X, y)
 >>> tree.predict(X)
 array([0, 0, 1, 1])
 """
@@ -29,6 +29,8 @@ from dataclasses import dataclass
 from typing import Optional, Tuple
 
 import numpy as np
+
+__all__ = ["DecisionTreeClassifier"]
 
 
 @dataclass
@@ -51,6 +53,7 @@ class _TreeNode:
         Class probability distribution at this node (for leaves).
         Shape (n_classes,).
     """
+
     feature_index: Optional[int] = None
     threshold: Optional[float] = None
     left: Optional["_TreeNode"] = None
@@ -142,60 +145,48 @@ class DecisionTreeClassifier:
             raise ValueError("y must be a 1D array of class labels.")
         if X.shape[0] != y.shape[0]:
             raise ValueError("X and y must have the same number of samples.")
+        if X.shape[0] == 0:
+            raise ValueError("X must be non-empty.")
 
-        self.n_features_ = X.shape[1]
-        classes = np.unique(y)
         # Require integer-encoded classes for simplicity
         if not np.issubdtype(y.dtype, np.integer):
             raise ValueError("y must contain integer-encoded class labels (0, 1, 2, ...).")
-        self.n_classes_ = int(classes.max() + 1)
+
+        classes = np.unique(y)
+        # Enforce contiguous labels 0..K-1 to match docstring expectations
+        if classes.size == 0 or classes.min() != 0 or not np.array_equal(classes, np.arange(classes.max() + 1)):
+            raise ValueError("y must be integer-encoded with contiguous labels starting at 0 (0..K-1).")
+
+        self.n_features_ = X.shape[1]
+        self.n_classes_ = int(classes.size)
 
         self._rng = np.random.default_rng(self.random_state)
-
         self.tree_ = self._grow_tree(X, y, depth=0)
         return self
 
     def predict(self, X: np.ndarray) -> np.ndarray:
-        """Predict class labels for the given samples.
-
-        Parameters
-        ----------
-        X : np.ndarray of shape (n_samples, n_features)
-            Input feature matrix.
-
-        Returns
-        -------
-        y_pred : np.ndarray of shape (n_samples,)
-            Predicted class labels.
-        """
+        """Predict class labels for the given samples."""
         proba = self.predict_proba(X)
         return np.argmax(proba, axis=1)
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        """Predict class probabilities for the given samples.
-
-        Parameters
-        ----------
-        X : np.ndarray of shape (n_samples, n_features)
-            Input feature matrix.
-
-        Returns
-        -------
-        proba : np.ndarray of shape (n_samples, n_classes_)
-            Predicted class probabilities.
-        """
+        """Predict class probabilities for the given samples."""
         if self.tree_ is None or self.n_classes_ is None:
             raise RuntimeError("The tree has not been fitted yet. Call `fit` first.")
 
         X = np.asarray(X)
         if X.ndim != 2:
             raise ValueError("X must be a 2D array of shape (n_samples, n_features).")
+        if self.n_features_ is not None and X.shape[1] != self.n_features_:
+            raise ValueError(f"X has {X.shape[1]} features, expected {self.n_features_}.")
 
         n_samples = X.shape[0]
         proba = np.zeros((n_samples, self.n_classes_), dtype=float)
 
         for i in range(n_samples):
             node = self._traverse_tree(X[i], self.tree_)
+            if node.proba is None:
+                raise RuntimeError("Internal error: reached a leaf node without probabilities.")
             proba[i] = node.proba
 
         return proba
@@ -204,7 +195,7 @@ class DecisionTreeClassifier:
     # Internal tree growing logic
     # ------------------------------------------------------------------
     def _grow_tree(self, X: np.ndarray, y: np.ndarray, depth: int) -> _TreeNode:
-        n_samples, n_features = X.shape
+        n_samples, _ = X.shape
         num_labels = len(np.unique(y))
 
         # Compute class distribution at this node
@@ -218,14 +209,11 @@ class DecisionTreeClassifier:
         ):
             return _TreeNode(proba=proba)
 
-        # Try to find the best split
         feat_idx, threshold, (left_mask, right_mask) = self._best_split(X, y)
 
-        # If no valid split was found, make this a leaf
         if feat_idx is None:
             return _TreeNode(proba=proba)
 
-        # Recursively grow children
         left_child = self._grow_tree(X[left_mask], y[left_mask], depth + 1)
         right_child = self._grow_tree(X[right_mask], y[right_mask], depth + 1)
 
@@ -243,7 +231,11 @@ class DecisionTreeClassifier:
         """Find the best feature and threshold to split on using Gini impurity."""
         n_samples, n_features = X.shape
         if n_samples < 2 * self.min_samples_leaf:
-            return None, None, (np.array([]), np.array([]))
+            return None, None, (np.array([], dtype=bool), np.array([], dtype=bool))
+
+        if self._rng is None:
+            # should not happen if fit() was called
+            self._rng = np.random.default_rng(self.random_state)
 
         # Determine which features to consider
         if self.max_features is None:
@@ -270,15 +262,14 @@ class DecisionTreeClassifier:
             x_column = X[:, feat]
             thresholds = np.unique(x_column)
             if thresholds.size == 1:
-                # All values are identical; no split
                 continue
 
             for thresh in thresholds:
                 left_mask = x_column <= thresh
                 right_mask = ~left_mask
 
-                n_left = left_mask.sum()
-                n_right = right_mask.sum()
+                n_left = int(left_mask.sum())
+                n_right = int(right_mask.sum())
 
                 if n_left < self.min_samples_leaf or n_right < self.min_samples_leaf:
                     continue
@@ -290,13 +281,13 @@ class DecisionTreeClassifier:
 
                 if gini_split < best_gini:
                     best_gini = gini_split
-                    best_feat = feat
+                    best_feat = int(feat)
                     best_thresh = float(thresh)
                     best_left_mask = left_mask
                     best_right_mask = right_mask
 
         if best_feat is None:
-            return None, None, (np.array([]), np.array([]))
+            return None, None, (np.array([], dtype=bool), np.array([], dtype=bool))
 
         return best_feat, best_thresh, (best_left_mask, best_right_mask)
 
@@ -309,14 +300,13 @@ class DecisionTreeClassifier:
             return 0.0
         counts = np.bincount(y, minlength=self.n_classes_)
         proba = counts / counts.sum()
-        return 1.0 - np.sum(proba ** 2)
+        return 1.0 - float(np.sum(proba ** 2))
 
     def _class_proba(self, y: np.ndarray) -> np.ndarray:
         """Compute class probability distribution for labels y."""
         counts = np.bincount(y, minlength=self.n_classes_)
         total = counts.sum()
         if total == 0:
-            # Should not happen in normal training, but guard against division by zero
             return np.full(self.n_classes_, 1.0 / self.n_classes_)
         return counts / total
 
@@ -331,3 +321,4 @@ class DecisionTreeClassifier:
                 assert node.right is not None
                 node = node.right
         return node
+
