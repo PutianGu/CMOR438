@@ -1,6 +1,5 @@
-# CMOR 438 — Machine Learning Algorithms (Rice University)
-
-A compact, NumPy-first machine learning library built for **CMOR 438: Machine Learning Algorithms** at Rice University.  
+# CMOR 438 — Machine Learning Algorithms and Examples
+  
 This repository implements classic supervised and unsupervised algorithms **from scratch**, with **pytest unit tests** and **end-to-end Jupyter notebooks** demonstrating complete ML workflows (data → preprocessing → training → evaluation → visualization).
 
 - **Author:** Putian Gu  

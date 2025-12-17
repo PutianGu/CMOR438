@@ -22,8 +22,3 @@ jupyter notebook
 
 Then navigate into `examples/` and open any notebook.
 
-## Notes on reproducibility
-
-- Notebooks set `random_state` where applicable to make results reproducible.
-- Any feature scaling/standardization is computed using **training data only**, and then applied to the test set to avoid leakage.
-- Plots are used to support interpretation (decision boundaries, confusion matrices, RMSE/R² curves, clustering visualizations, etc.).
