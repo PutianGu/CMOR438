@@ -125,7 +125,7 @@ def _pairwise_distances(XA: np.ndarray, XB: np.ndarray, metric: str) -> np.ndarr
         bb = np.sum(XB * XB, axis=1, keepdims=True).T     # (1, n_b)
         # numerical stability: distances can't be negative
         D2 = np.maximum(aa + bb - 2.0 * XA @ XB.T, 0.0)
-        return np.sqrt(D2, dtype=float)
+        return np.sqrt(D2)
     elif metric == "manhattan":
         # expand dims for broadcasting: (n_a, 1, d) - (1, n_b, d)
         diff = XA[:, None, :] - XB[None, :, :]
