@@ -3,7 +3,8 @@ from .k_nearest_neighbors import KNNClassifier, KNNRegressor
 from .linear_regression import LinearRegression
 from .logistic_regression import LogisticRegression
 from .perceptron import PerceptronClassifier
-
+from .distance_metrics import euclidean_distance, manhattan_distance
+from .regression_trees import RegressionTreeRegressor
 __all__ = [
     "DecisionTreeClassifier",
     "KNNClassifier",
@@ -11,4 +12,8 @@ __all__ = [
     "LinearRegression",
     "LogisticRegression",
     "PerceptronClassifier",
+    "euclidean_distance",
+    "manhattan_distance",
+    "RegressionTreeRegressor",
 ]
+
