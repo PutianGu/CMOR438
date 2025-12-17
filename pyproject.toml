@@ -10,7 +10,7 @@ authors = [{ name = "Putian Gu", email = "pg38@rice.edu" }]
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.9"
-dependencies = ["numpy", "matplotlib", "os", "dataclasses", "seaborn", "pandas", "requests"]
+dependencies = ["numpy", "matplotlib", "seaborn", "pandas", "requests"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
